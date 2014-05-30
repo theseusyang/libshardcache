@@ -10,6 +10,7 @@ VERSION              : <BYTE>
 HDR                  : <MSG_GET> | <MSG_SET> | <MSG_DELETE> | <MSG_EVICT> |
                        <MSG_GET_ASYNC> | <MSG_GET_OFFSET> |
                        <MSG_GET_INDEX> | <MSG_INDEX_RESPONSE> |
+                       <MSG_GET_MULTI> | <MSG_SET_MULTI> |
                        <MSG_ADD> | <MSG_EXISTS> | <MSG_TOUCH> |
                        <MSG_MIGRATION_BEGIN> | <MSG_MIGRATION_ABORT> | <MSG_MIGRATION_END> |
                        <MSG_CHECK> | <MSG_STATS> |
@@ -24,6 +25,8 @@ MSG_GET_OFFSET       : 0x06
 MSG_ADD              : 0x07
 MSG_EXISTS           : 0x08
 MSG_TOUCH            : 0x09
+MSG_GET_MULTI        : 0x0A
+MSG_SET_MULTI        : 0x0B
 MSG_MIGRATION_ABORT  : 0x21
 MSG_MIGRATION_BEGIN  : 0x22
 MSG_MIGRATION_END    : 0x23
@@ -63,8 +66,15 @@ EMPTY_RESPONSE       : <MSG_RESPONSE><NULL_RECORD><EOM>
 Extra definitions:
 
 KEY                  : <RECORD>
+NUM_KEYS             : <SIZE>
+KEY_LIST             : <KEY>[<RSEP><KEY_LIST>]
 VALUE                : <RECORD>
-TTL                  : <RECORD>
+NUM_VALUES           : <SIZE>
+VALUE_LIST           : <VALUE>[<RSEP><VALUE_LIST>]
+KEY_VALUE_LIST       : <KEY><RSEP><VALUE>[<RSEP><KEY_VALUE_LIST>]
+NUM_STATUS           : <SIZE>
+STATUS               : <OK>|<ERR>
+EXPIRE               : <RECORD>
 INDEX                : <RECORD>
 OFFSET               : <LONG_SIZE>
 LONG_SIZE            : <DOUBLE_WORD>
@@ -100,16 +110,22 @@ GET_ASYNC         : <MSG_GET_ASYNC><KEY><EOM>
 GET_OFFSET        : <MSG_GET_OFFSET><KEY><OFFSET><LENGTH><EOM>
                     RESPONSE: <MSG_RESPONSE><RECORD><REMAINING_BYTES><EOM>
 
+GET_MULTI         : <MSG_GET_MULTI><NUM_KEYS><KEY_LIST><EOM>
+                    RESPONSE: <MSG_RESPONSE><NUM_VALUES><VALUE_LIST><EOM>
+
 EXISTS_MESSAGE    : <MSG_EXISTS><KEY><EOM>
                     RESPONSE: <MSG_RESPONSE>(<YES> | <NO>)<EOM>
 
 TOUCH_MESSAGE     : <MSG_TOUCH><KEY><EOM>
                     RESPONSE: <MSG_RESPONSE>(<OK> | <ERR>)<EOM>
 
-SET_MESSAGE       : <MSG_SET><KEY><RSEP><VALUE>[<RSEP><TTL>]<EOM>
+SET_MESSAGE       : <MSG_SET><KEY><RSEP><VALUE>[<RSEP><EXPIRE>]<EOM>
                     RESPONSE: <MSG_RESPONSE>(<OK> | <ERR>)<EOM>
 
-ADD_MESSAGE       : <MSG_ADD><KEY><RSEP><VALUE>[<RSEP><TTL>]<EOM>
+SET_MULTI         : <MSG_SET><NUM_KEYS><KEY_VALUE_LIST><EXPIRE><EOM>
+                    RESPONSE: <MSG_RESPONSE><NUM_STATUS><STATUS><STATUS>...<EOM>
+
+ADD_MESSAGE       : <MSG_ADD><KEY><RSEP><VALUE>[<RSEP><EXPIRE>]<EOM>
                     RESPONSE: <MSG_RESPONSE>(<OK> | <ERR> | <EXISTS>)<EOM>
 
 DEL_MESSAGE       : <MSG_DELETE><KEY><EOM>
@@ -219,7 +235,7 @@ A message containing one record (fitting a single chunk) would look like :
 
 
 A message containing 2 records,  for instance a 'SET' request where all
-key, value and ttl need to be provided (still fitting in one chunk) :
+key, value and expire need to be provided (still fitting in one chunk) :
 
 ===============================================================================
 |  FIELD   |  SIZE   |  DESC                                                  |
@@ -241,9 +257,9 @@ key, value and ttl need to be provided (still fitting in one chunk) :
 |----------|---------|--------------------------------------------------------|
 |   RSEP   | 1 Bytes |  Record Separator (0x80)                               |
 |----------|---------|--------------------------------------------------------|
-|   SIZE   | 2 Bytes |  Size of the ttl record (must be 4 == 0x00,0x04)       |
+|   SIZE   | 2 Bytes |  Size of the expire record (must be 4 == 0x00,0x04)    |
 |----------|---------|--------------------------------------------------------|
-|   TTL    | 4 Bytes |  ttl in seconds (uint32_t in network byte order)       |
+|   EXPIRE | 4 Bytes |  expire in seconds (uint32_t in network byte order)    |
 |----------|---------|--------------------------------------------------------|
 |   EOR    | 2 Bytes |  End Of Record (0x00, 0x00)                            |
 |----------|---------|--------------------------------------------------------|
@@ -253,7 +269,7 @@ key, value and ttl need to be provided (still fitting in one chunk) :
 
 
 A more complex message with 2 records but not fitting in a single chunk would 
-look like (this time without the ttl record):
+look like (this time without the expire record):
 
 ===============================================================================
 |  FIELD   |  SIZE   |  DESC                                                  |
